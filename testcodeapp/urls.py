@@ -3,6 +3,8 @@ from . import views
 
 urlpatterns = [
     path('', views.index_view, name='index'),
+    path('categories/', views.categories_page, name='categories_page'),
+    path('documents/', views.documents_page, name='documents_page'),
     
     # Categories
     path('api/categories/', views.categories, name='categories'),
@@ -15,12 +17,14 @@ urlpatterns = [
     # Test Codes
     path('api/test-codes/', views.test_codes, name='test_codes'),
     path('api/test-codes/<str:mgm_code>/', views.test_code_detail, name='test_code_detail'),
+    path('api/test-codes/multi-delete/', views.test_codes_multi_delete, name='test_codes_multi_delete'),
     
     # Pre Data
     path('api/pre-data/', views.pre_data, name='pre_data'),
     path('api/pre-data/<int:id>/', views.pre_data_detail, name='pre_data_detail'),
     path('api/pre-data/approve/', views.approve_pre_data, name='approve_pre_data'),
     path('api/pre-data/delete-all/', views.delete_all_pre_data, name='delete_all_pre_data'),
+    path('api/pre-data/multi-delete/', views.pre_data_multi_delete, name='pre_data_multi_delete'),
     
     # Logs
     path('api/logs/', views.logs, name='logs'),

@@ -30,9 +30,9 @@ class TestCode(models.Model):
 
 
 class PreData(models.Model):
-    mgm_code = models.CharField(max_length=100)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='pre_data')
-    status = models.CharField(max_length=50, choices=[('Normal', 'Normal'), ('Not Normal', 'Not Normal')])
+    mgm_code = models.CharField(max_length=100, default="mgm#", unique=True)
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='pre_data', null=True, blank=True)
+    status = models.CharField(max_length=50, choices=[('Normal', 'Normal'), ('Not Normal', 'Not Normal')], default='Not Normal')
     documents = models.ManyToManyField(Document, blank=True, related_name='pre_data')
     created_at = models.DateTimeField(auto_now_add=True)
 

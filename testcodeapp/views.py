@@ -10,6 +10,14 @@ def index_view(request):
     return render(request, 'index.html')
 
 
+def categories_page(request):
+    return render(request, 'categories.html')
+
+
+def documents_page(request):
+    return render(request, 'documents.html')
+
+
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def categories(request):
@@ -102,18 +110,26 @@ def test_codes(request):
     elif request.method == 'POST':
         data = json.loads(request.body)
         try:
+            mgm_code = data['mgmCode']
+            # Check duplicates in both tables
+            if TestCode.objects.filter(mgm_code=mgm_code).exists() or PreData.objects.filter(mgm_code=mgm_code).exists():
+                return JsonResponse({'success': False, 'error': 'Test code already exists'}, status=400)
+                
             category = Category.objects.get(name=data['category'])
             tc = TestCode.objects.create(
-                mgm_code=data['mgmCode'],
+                mgm_code=mgm_code,
                 category=category,
                 status=data['status']
             )
             if data.get('documents'):
-                doc = Document.objects.get(name=data['documents'])
-                tc.documents.add(doc)
-            Log.objects.create(message=f"Test code created: {data['mgmCode']}")
+                doc_names = [d.strip() for d in data['documents'].split(',') if d.strip()]
+                for doc_name in doc_names:
+                    doc, _ = Document.objects.get_or_create(name=doc_name)
+                    tc.documents.add(doc)
+            Log.objects.create(message=f"Test code created: {mgm_code}")
             return JsonResponse({'success': True})
         except Exception as e:
+            print(e)
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
@@ -149,6 +165,26 @@ def test_code_detail(request, mgm_code):
 
 
 @csrf_exempt
+@require_http_methods(["DELETE"])
+def test_codes_multi_delete(request):
+    data = json.loads(request.body)
+    mgm_codes_input = data.get('mgmCodes', '')
+    # Handle both cases: if it's a string (split by comma) or an array
+    if isinstance(mgm_codes_input, str):
+        mgm_codes = [code.strip() for code in mgm_codes_input.split(',') if code.strip()]
+    else:
+        mgm_codes = mgm_codes_input
+    for mgm_code in mgm_codes:
+        try:
+            tc = TestCode.objects.get(mgm_code=mgm_code)
+            tc.delete()
+            Log.objects.create(message=f"Test code deleted: {mgm_code}")
+        except:
+            pass
+    return JsonResponse({'success': True})
+
+
+@csrf_exempt
 @require_http_methods(["GET", "POST"])
 def pre_data(request):
     if request.method == 'GET':
@@ -159,38 +195,103 @@ def pre_data(request):
             result.append({
                 'id': pd.id,
                 'mgmCode': pd.mgm_code,
-                'category': pd.category.name,
+                'category': pd.category.name if pd.category else None,
                 'status': pd.status,
                 'documents': ', '.join(doc_names)
             })
         return JsonResponse({'preData': result})
     
     elif request.method == 'POST':
+        from django.db import IntegrityError
         data_list = json.loads(request.body)
+        existing_test_codes = set(TestCode.objects.values_list('mgm_code', flat=True))
+        existing_pre_data = set(PreData.objects.values_list('mgm_code', flat=True))
+        
         for data in data_list:
+            mgm_code = data.get('mgmCode', 'mgm#')
+            
+            # Skip duplicates
+            if mgm_code in existing_test_codes or mgm_code in existing_pre_data:
+                continue
+                
+            category = None
+            if data.get('category'):
+                category, _ = Category.objects.get_or_create(name=data['category'])
             try:
-                category = Category.objects.get(name=data['category'])
                 pd = PreData.objects.create(
-                    mgm_code=data['mgmCode'],
+                    mgm_code=mgm_code,
                     category=category,
-                    status=data['status']
+                    status=data.get('status', 'Not Normal')
                 )
-                Log.objects.create(message=f"Pre data created: {data['mgmCode']}")
-            except Exception as e:
+                if data.get('documents'):
+                    doc_names = [d.strip() for d in data['documents'].split(',') if d.strip()]
+                    for doc_name in doc_names:
+                        doc, _ = Document.objects.get_or_create(name=doc_name)
+                        pd.documents.add(doc)
+                existing_pre_data.add(mgm_code)
+                Log.objects.create(message=f"Pre data created: {mgm_code}")
+            except IntegrityError:
+                # Skip if there's a unique constraint violation
                 pass
         return JsonResponse({'success': True})
 
 
 @csrf_exempt
-@require_http_methods(["DELETE"])
+@require_http_methods(["PUT", "DELETE"])
 def pre_data_detail(request, id):
     try:
         pd = PreData.objects.get(id=id)
     except PreData.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Pre data not found'}, status=404)
     
-    pd.delete()
-    Log.objects.create(message=f"Pre data deleted: {pd.mgm_code}")
+    if request.method == 'PUT':
+        data = json.loads(request.body)
+        pd.mgm_code = data.get('mgmCode', pd.mgm_code)
+        
+        if data.get('category'):
+            try:
+                pd.category = Category.objects.get(name=data['category'])
+            except:
+                pd.category = None
+        else:
+            pd.category = None
+            
+        pd.status = data.get('status', pd.status)
+        
+        pd.documents.clear()
+        if data.get('documents'):
+            doc_names = [d.strip() for d in data['documents'].split(',') if d.strip()]
+            for doc_name in doc_names:
+                doc, _ = Document.objects.get_or_create(name=doc_name)
+                pd.documents.add(doc)
+        
+        pd.save()
+        Log.objects.create(message=f"Pre data updated: {pd.mgm_code}")
+        return JsonResponse({'success': True})
+    
+    elif request.method == 'DELETE':
+        pd.delete()
+        Log.objects.create(message=f"Pre data deleted: {pd.mgm_code}")
+        return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def pre_data_multi_delete(request):
+    data = json.loads(request.body)
+    ids_input = data.get('ids', [])
+    # Handle both cases: if it's a string (split by comma) or an array
+    if isinstance(ids_input, str):
+        ids = [int(id.strip()) for id in ids_input.split(',') if id.strip()]
+    else:
+        ids = ids_input
+    for pd_id in ids:
+        try:
+            pd = PreData.objects.get(id=pd_id)
+            pd.delete()
+            Log.objects.create(message=f"Pre data deleted: {pd.mgm_code}")
+        except:
+            pass
     return JsonResponse({'success': True})
 
 
@@ -199,23 +300,44 @@ def pre_data_detail(request, id):
 def approve_pre_data(request):
     data = json.loads(request.body)
     pre_data_ids = data.get('ids', [])
+    mgm_codes = data.get('mgmCodes', [])
     
-    for pd_id in pre_data_ids:
-        try:
-            pd = PreData.objects.get(id=pd_id)
-            tc, created = TestCode.objects.get_or_create(
-                mgm_code=pd.mgm_code,
-                defaults={'category': pd.category, 'status': pd.status}
-            )
-            if not created:
-                tc.category = pd.category
-                tc.status = pd.status
-                tc.save()
-            tc.documents.set(pd.documents.all())
-            pd.delete()
-            Log.objects.create(message=f"Pre data approved: {pd.mgm_code}")
-        except Exception as e:
-            pass
+    if mgm_codes:
+        # Approve by MGM codes
+        for mgm_code in mgm_codes:
+            try:
+                pd = PreData.objects.get(mgm_code=mgm_code)
+                tc, created = TestCode.objects.get_or_create(
+                    mgm_code=pd.mgm_code,
+                    defaults={'category': pd.category, 'status': pd.status}
+                )
+                if not created:
+                    tc.category = pd.category
+                    tc.status = pd.status
+                    tc.save()
+                tc.documents.set(pd.documents.all())
+                pd.delete()
+                Log.objects.create(message=f"Pre data approved: {pd.mgm_code}")
+            except Exception as e:
+                pass
+    else:
+        # Approve by IDs
+        for pd_id in pre_data_ids:
+            try:
+                pd = PreData.objects.get(id=pd_id)
+                tc, created = TestCode.objects.get_or_create(
+                    mgm_code=pd.mgm_code,
+                    defaults={'category': pd.category, 'status': pd.status}
+                )
+                if not created:
+                    tc.category = pd.category
+                    tc.status = pd.status
+                    tc.save()
+                tc.documents.set(pd.documents.all())
+                pd.delete()
+                Log.objects.create(message=f"Pre data approved: {pd.mgm_code}")
+            except Exception as e:
+                pass
     
     return JsonResponse({'success': True})
 

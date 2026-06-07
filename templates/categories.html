@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Categories</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background:#f5f7fa; color:#333; }
+        header { background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:1rem 2rem; }
+        .navbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; }
+        nav { display:flex; gap:0.5rem; flex-wrap:wrap; }
+        .nav-link { background:rgba(255,255,255,0.2); color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; text-decoration:none; }
+        .nav-link:hover { background:rgba(255,255,255,0.3); }
+        .container { max-width:1200px; margin:2rem auto; padding:0 2rem; }
+        .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem; }
+        .page-title { font-size:1.8rem; color:#2c3e50; }
+        .btn { padding:8px 16px; border:none; border-radius:5px; cursor:pointer; font-size:14px; transition:all 0.3s; }
+        .btn-primary { background:#667eea; color:white; }
+        .btn-danger { background:#e74c3c; color:white; }
+        .form-group { margin-bottom:1rem; }
+        .form-group label { display:block; margin-bottom:0.5rem; font-weight:500; color:#555; }   
+        .form-group input { width:100%; padding:10px; border:1px solid #ddd; border-radius:5px; font-size:14px; }
+        .table-container { background:white; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.05); overflow-x:auto; }
+        table { width:100%; border-collapse:collapse; }
+        th, td { padding:12px 15px; text-align:left; border-bottom:1px solid #eee; }
+        th { background:#f8f9fa; font-weight:600; color:#2c3e50; }
+        .modal { display:none; position:fixed; z-index:2000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; }
+        .modal.active { display:flex; }
+        .modal-content { background:white; padding:2rem; border-radius:10px; width:90%; max-width:500px; box-shadow:0 4px 20px rgba(0,0,0,0.2); }
+        .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; }
+        .modal-title { font-size:1.5rem; color:#2c3e50; }
+        .close-btn { font-size:2rem; cursor:pointer; color:#999; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="navbar">
+            <div class="logo">Categories Management</div>
+            <nav>
+                <a href="/" class="nav-link">Home</a>
+                <a href="/documents/" class="nav-link">Documents</a>
+            </nav>
+        </div>
+    </header>
+    <div class="container">
+        <div class="page-header">
+            <h1 class="page-title">Categories</h1>
+            <button class="btn btn-primary" onclick="openAddModal()">Add Category</button>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="categoriesTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Add Category Modal -->
+    <div id="addModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Add Category</h2>
+                <span class="close-btn" onclick="closeAddModal()">&times;</span>
+            </div>
+            <div class="form-group">
+                <label>Category Name</label>
+                <input type="text" id="newCategoryName" placeholder="Enter category name">
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-primary" onclick="addCategory()">Add</button>
+                <button class="btn btn-danger" onclick="closeAddModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Category Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Edit Category</h2>
+                <span class="close-btn" onclick="closeEditModal()">&times;</span>
+            </div>
+            <div class="form-group">
+                <label>Current Name</label>
+                <input type="text" id="editCategoryOldName" readonly>
+            </div>
+            <div class="form-group">
+                <label>New Name</label>
+                <input type="text" id="editCategoryNewName" placeholder="Enter new name">
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-primary" onclick="editCategory()">Update</button>
+                <button class="btn btn-danger" onclick="closeEditModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Enter Lock Code</h2>
+                <span class="close-btn" onclick="closeDeleteModal()">&times;</span>
+            </div>
+            <div class="form-group">
+                <label>6-digit Lock Code (Default: 000000)</label>
+                <input type="password" id="deleteLockCode" maxlength="6" placeholder="000000">
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-danger" onclick="verifyDelete()">Delete</button>
+                <button class="btn btn-primary" onclick="closeDeleteModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let appCategories = [];
+        let lockCode = '000000';
+        let deleteCategoryName = null;
+
+        async function loadLockCode() {
+            try {
+                const response = await fetch('/api/lock-code/');
+                const data = await response.json();
+                lockCode = data.lockCode;
+            } catch (err) { console.error(err); }
+        }
+
+        async function loadCategories() {
+            try {
+                const response = await fetch('/api/categories/');
+                const data = await response.json();
+                appCategories = data.categories;
+                renderCategories();
+            } catch (err) { console.error(err); }
+        }
+
+        function renderCategories() {
+            const tbody = document.getElementById('categoriesTableBody');
+            tbody.innerHTML = appCategories.map(cat => `
+                <tr>
+                    <td>${cat}</td>
+                    <td>
+                        <button class="btn btn-primary" onclick="openEditModal('${cat}')" style="margin-right:8px;">Edit</button>
+                        <button class="btn btn-danger" onclick="confirmDelete('${cat}')">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function openAddModal() { document.getElementById('addModal').classList.add('active'); }
+        function closeAddModal() { document.getElementById('addModal').classList.remove('active'); }
+        function openEditModal(name) {
+            document.getElementById('editCategoryOldName').value = name;
+            document.getElementById('editCategoryNewName').value = '';
+            document.getElementById('editModal').classList.add('active');
+        }
+        function closeEditModal() { document.getElementById('editModal').classList.remove('active'); }
+
+        async function addCategory() {
+            const name = document.getElementById('newCategoryName').value.trim();
+            if (!name) return;
+            try {
+                await fetch('/api/categories/', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name })
+                });
+                closeAddModal();
+                loadCategories();
+            } catch (err) { console.error(err); }
+        }
+
+        async function editCategory() {
+            const oldName = document.getElementById('editCategoryOldName').value;
+            const newName = document.getElementById('editCategoryNewName').value.trim();
+            if (!newName) return;
+            try {
+                await fetch(`/api/categories/${encodeURIComponent(oldName)}/`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_name: newName })
+                });
+                closeEditModal();
+                loadCategories();
+            } catch (err) { console.error(err); }
+        }
+
+        function confirmDelete(name) {
+            deleteCategoryName = name;
+            document.getElementById('deleteModal').classList.add('active');
+        }
+        function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('active'); }
+
+        async function verifyDelete() {
+            const enteredCode = document.getElementById('deleteLockCode').value.trim();
+            if (enteredCode === lockCode) {
+                await deleteCategory();
+            } else { alert('Incorrect lock code!'); }
+        }
+
+        async function deleteCategory() {
+            try {
+                await fetch(`/api/categories/${encodeURIComponent(deleteCategoryName)}/`, { method: 'DELETE' });
+                closeDeleteModal();
+                loadCategories();
+            } catch (err) { console.error(err); }
+        }
+
+        // Initialize
+        loadLockCode();
+        loadCategories();
+    </script>
+</body>
+</html>
